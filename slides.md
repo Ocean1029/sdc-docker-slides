@@ -825,11 +825,579 @@ layout: section
 - 清理資源
 
 ---
+layout: section
+---
+
+# 第二章
+## Docker Compose
+
+多容器編排
+
+---
+layout: section
+---
+
+# 2.1 為什麼需要 Docker Compose？
+
+---
+
+# 多容器的痛點
+
+實際專案幾乎都是多個容器組成：Web app + DB + Cache + ……
+
+- 每跑一個服務就要打一串 `docker run`
+- 參數又臭又長，順序不能錯
+- 沒有單一檔案能 commit 進 Git
+- 新人加入要一條一條傳 SOP
+
+<!--
+Snow 問 Ocean：「指令記在哪？」
+「...我記在腦袋裡。」
+「喔不。」
+-->
+
+---
+
+# Docker Compose 是什麼？
+
+Docker 官方提供的**多容器編排工具**
+
+- 用一個 YAML 設定檔定義所有容器（Image / Port / Volume / Env / 相依）
+- 一個指令 `docker compose up` 完成整個應用部署
+- 設定檔可以納入版本控制
+- OrbStack 已內建，可用 `docker compose version` 確認
+
+---
+
+# 範例：PostgreSQL + Adminer
+
+`postgres` 是資料庫；`adminer` 是輕量的網頁資料庫管理介面。
+
+```
+┌──────────────────────────────────────────────────────┐
+│                  PostgreSQL + Adminer                │
+├──────────────────────────────────────────────────────┤
+│                   ┌──────────┐                       │
+│                   │  Client  │                       │
+│                   └────┬─────┘                       │
+│                        │ http://localhost:8080       │
+│                        ▼                             │
+│              ┌──────────────────┐                    │
+│              │     Adminer      │  ← Container 1     │
+│              │  (DB Admin UI)   │                    │
+│              │   (Port 8080)    │                    │
+│              └────────┬─────────┘                    │
+│                       │  db:5432                     │
+│                       ▼                              │
+│              ┌──────────────────┐                    │
+│              │   PostgreSQL     │  ← Container 2     │
+│              │   (Port 5432)    │                    │
+│              └──────────────────┘                    │
+└──────────────────────────────────────────────────────┘
+```
+
+---
+
+# 不用 Compose 的版本
+
+```bash
+# 建立網路
+docker network create myapp
+
+# 啟動 PostgreSQL
+docker run -d --name db --network myapp \
+  -e POSTGRES_PASSWORD=secret \
+  -v pgdata:/var/lib/postgresql/data \
+  postgres:17-alpine
+
+# 啟動 Adminer
+docker run -d --name adminer --network myapp \
+  -p 8080:8080 \
+  -e ADMINER_DEFAULT_SERVER=db \
+  adminer:4
+```
+
+> 三條指令必須按順序、flag 散在好幾行、沒有單一檔案能 commit 進 Git
+
+---
+
+# 三條指令分別在做什麼
+
+- **`docker network create myapp`**：開一個 bridge 網路，下面兩個容器要加進來才能互通
+- **Postgres**：`--name db` 同時是容器名稱也是 DNS 名稱、`-e` 設密碼、`-v` 把資料放進 Named Volume
+- **Adminer**：`-p 8080:8080` 對外開 port、`-e ADMINER_DEFAULT_SERVER=db` 預先填好「預設資料庫主機 = `db` 容器」
+
+> 所有 flag 第一章都看過。差別只在這次有兩個容器要互相找到對方。
+
+---
+
+# 用 Compose 的版本
+
+```yaml
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: secret
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  adminer:
+    image: adminer:4
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
+```
+
+執行：`docker compose up -d`
+
+---
+
+# Adminer 登入畫面
+
+打開 `http://localhost:8080`，系統選 PostgreSQL、使用者填 `postgres`、密碼填 `secret`。
+
+<div class="mt-4 flex justify-center">
+  <img src="/adminer-login.png" class="h-72 rounded shadow" />
+</div>
+
+---
+
+# YAML 欄位拆解
+
+最上層的 `services` 區塊定義所有容器，每個 key 是一個服務名稱。
+
+| 欄位 | 對應的 docker run flag |
+|------|---------------------|
+| `image` | `docker run <image>` |
+| `ports` | `-p` |
+| `environment` | `-e` |
+| `volumes` | `-v` |
+| `depends_on` | （Compose 專有，控制啟動順序） |
+
+YAML 看起來像 docker run 的「擺正、可重複」版本。
+
+---
+
+# `depends_on` 的陷阱
+
+```yaml
+depends_on:
+  - db
+```
+
+只等容器**啟動**，不等服務真正**準備好**。
+
+- PostgreSQL 容器啟動後還需要幾秒初始化
+- 這段時間 Adminer 連過去會直接噴錯
+
+---
+
+# 搭配 healthcheck
+
+```yaml
+adminer:
+  depends_on:
+    db:
+      condition: service_healthy
+
+db:
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U postgres"]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+```
+
+- `pg_isready` 是 PostgreSQL 內建的檢查工具
+- Compose 每 5 秒問一次「資料庫好了沒」
+- 連續失敗 5 次才判定不健康
+- `adminer` 會等到 db 的 healthcheck 通過才啟動
+
+---
+
+# 常用 Compose 指令
+
+```bash
+# 啟動所有服務（背景）
+docker compose up -d
+
+# 看服務狀態
+docker compose ps
+
+# 停止並移除所有容器
+docker compose down
+
+# 看某個 service 的日誌
+docker compose logs <service_name>
+
+# 進入容器的 shell
+docker compose exec <service_name> sh
+```
+
+> 所有指令都是 `docker compose` 開頭，後面接動作。
+
+---
+layout: section
+---
+
+# 2.2 Network
+
+---
+
+# 容器間通訊
+
+回顧 1.6：
+
+- 容器網路是隔離的
+- 外面連不進去要靠 Port Mapping
+- **容器跟容器之間預設也是連不通的**
+
+要讓多個容器互通：把它們放進同一個 **Docker Network**
+
+> Docker Network 是一條虛擬網路線，只有接在同一條線上的容器才能互相找到對方。
+
+---
+
+# Compose 自動建網路
+
+不用 Compose 時：手動 `docker network create myapp`，每個容器加 `--network myapp`
+
+用 Compose 時：**完全不用寫網路設定**
+
+- Compose 會自動建立一個預設網路
+- `docker-compose.yml` 裡所有 service 都被放進去
+- 容器之間就能互相連線
+
+---
+
+# 服務名稱 = hostname
+
+```yaml
+environment:
+  ADMINER_DEFAULT_SERVER: db
+```
+
+Adminer 用 `db` 當 hostname 連資料庫，Compose 內建的 DNS 自動解析到 PostgreSQL 容器的 IP。
+
+換成 API 連同一個 DB：
+
+```yaml
+environment:
+  DATABASE_URL: postgres://postgres:secret@db:5432/mydb
+```
+
+`@db` 也是同樣的道理。服務改名字，這裡也要跟著改。
+
+> ⚠ 這個 DNS 只在 Compose 的虛擬網路裡有效。在主機上 `ping db` 不會通。
+
+---
+layout: section
+---
+
+# 2.3 環境變數管理
+
+---
+
+# 把密碼寫進 docker-compose.yml？
+
+Ocean 把 2.1 的 compose 整份 commit 上 public repo，三分鐘後收到 GitHub Secret Scanning 的警告信。Snow：「噢不。」
+
+```yaml
+environment:
+  POSTGRES_PASSWORD: secret   # ← 會跟著 Git 一起推上去
+```
+
+開發時這樣寫沒問題，但 commit 進 Git 等於把密碼公開。
+
+**敏感資訊 → 抽到 `.env`，加進 `.gitignore`**
+
+---
+
+# `.env` 檔案做法
+
+跟 `docker-compose.yml` 放同一個目錄：
+
+```bash
+# .env
+POSTGRES_USER=myuser
+POSTGRES_PASSWORD=secret
+POSTGRES_DB=mydb
+```
+
+`docker-compose.yml` 裡用 `${var}` 引用：
+
+```yaml
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+```
+
+Compose 會自動讀同目錄下的 `.env`。
+
+---
+
+# 用 env_file 一次載入
+
+如果環境變數很多，一個一個寫 `${...}` 太麻煩：
+
+```yaml
+services:
+  adminer:
+    env_file:
+      - .env
+```
+
+把整個 `.env` 一口氣灌進容器。
+
+> ⚠ 記得把 `.env` 加進 `.gitignore`！
+
+---
+layout: section
+---
+
+# 第三章
+## Dockerfile 基礎
+
+把自己的程式打包成 Image
+
+---
+layout: section
+---
+
+# 3.1 什麼是 Dockerfile？
+
+---
+
+# 自己的程式怎麼上 Image？
+
+前面用的 `nginx`、`postgres` 都是別人放在 Docker Hub 上的 Image。
+
+> 「別人的映像檔當然沒有我們的程式碼」  ── Andrew
+
+要把自己寫的程式變成 Image → 寫一個 **Dockerfile**
+
+- 放在專案根目錄的純文字檔
+- 描述 Image 怎麼建：基礎環境、複製哪些檔案、執行什麼指令、程式怎麼啟動
+- 寫好之後用 `docker build` 變成 Image，再用 `docker run` 跑起來
+
+---
+
+# 完整循環
+
+```
+Dockerfile ──→ docker build ──→ Image ──→ docker run ──→ Container
+（建置腳本）                     （成品）                  （跑起來）
+```
+
+第一章看的是後半段（用別人的 Image 跑容器）；這章補上前半段（怎麼把自己的程式變成 Image）。
+
+---
+layout: section
+---
+
+# 3.2 第一個 Dockerfile
+
+---
+
+# 最簡單的範例
+
+建一個空目錄並切進去：
+
+```bash
+mkdir hello-docker && cd hello-docker
+```
+
+建立檔名叫 `Dockerfile` 的純文字檔：
+
+```dockerfile
+FROM alpine:3.21
+CMD ["echo", "Hello from my first Dockerfile!"]
+```
+
+兩行：基底 Alpine、啟動時印一句話。
+
+---
+
+# build & run
+
+```bash
+# 建立 Image，命名為 hello
+docker build -t hello .
+```
+
+> `.` 是 build context，告訴 Docker 從目前目錄找 Dockerfile 與要打包的檔案。
+
+```bash
+# 確認 Image 真的建出來了
+docker images hello
+```
+
+```
+IMAGE          ID             DISK USAGE   CONTENT SIZE
+hello:latest   c2de8808511c       8.17MB             0B
+```
+
+```bash
+# 跑起來
+docker run --rm hello
+```
+
+```
+Hello from my first Dockerfile!
+```
+
+---
+layout: section
+---
+
+# 3.3 Go 網頁服務的 Dockerfile
+
+---
+
+# 範例專案
+
+`exercises/my-app/` 是一個最簡單的 Go HTTP server：
+
+```
+exercises/my-app/
+├── main.go         # Go 程式碼
+├── go.mod          # Go 模組定義
+└── Dockerfile      # 建置映像檔的腳本
+```
+
+`main.go` 監聽 8080，提供：
+
+- `GET /` → `Hello from Go! Hostname: <hostname>`
+- `GET /health` → `OK`
+
+---
+
+# 不用 Docker 怎麼跑？
+
+在一台新機器上跑這個服務，大概要打：
+
+```bash
+brew install go                 # 1. 安裝 Go
+mkdir /app && cd /app           # 2. 切到工作目錄
+git clone <repo-url> .          # 3. 把程式碼放進去
+go build -o server .            # 4. 編譯
+./server                        # 5. 執行
+```
+
+Dockerfile 的目的：把這 5 個步驟寫成檔案，讓 Docker 在乾淨的環境裡照做。
+
+---
+
+# Dockerfile 對照
+
+```dockerfile
+FROM golang:1.24-alpine          # 1. 在已經裝好 Go 的環境
+WORKDIR /app                     # 2. 切到工作目錄
+COPY . .                         # 3. 把程式碼放進去
+RUN go build -o server .         # 4. 編譯
+CMD ["./server"]                 # 5. 容器啟動時執行
+```
+
+五個指令對應五個步驟。
+
+---
+
+# 一行一行拆
+
+- **`FROM golang:1.24-alpine`** — 基礎環境。每個 Dockerfile 的第一行
+- **`WORKDIR /app`** — 設定 Image 內部的工作目錄；後面的 `COPY`、`RUN` 都會在這裡執行
+- **`COPY . .`** — 把本機目前目錄下所有檔案複製到 Image 的 `/app`
+  - 第一個 `.` 是本機路徑
+  - 第二個 `.` 是容器內路徑（`WORKDIR` 設定的 `/app`）
+- **`RUN go build -o server .`** — 建置時執行命令；結果會寫進 Image 的 Layer
+- **`CMD ["./server"]`** — 容器啟動時的預設命令
+
+> `RUN` 在 build 時執行；`CMD` 在容器啟動時執行。
+
+---
+
+# Build & Run
+
+```bash
+cd exercises/my-app
+docker build -t my-app .
+docker run -p 8080:8080 my-app
+```
+
+打開瀏覽器連 `http://localhost:8080`：
+
+```
+Hello from Go! Hostname: <container-id>
+```
+
+---
+
+# Dockerfile 指令速查表
+
+| 指令 | 說明 | 範例 |
+|------|------|------|
+| `FROM` | 指定基礎 Image（必須是第一行） | `FROM golang:1.24-alpine` |
+| `WORKDIR` | 設定工作目錄 | `WORKDIR /app` |
+| `COPY` | 複製檔案至 Image | `COPY . .` |
+| `RUN` | 建置時執行命令 | `RUN go build -o server .` |
+| `CMD` | 容器啟動時的預設命令 | `CMD ["./server"]` |
+| `ENTRYPOINT` | 容器啟動時的固定入口 | `ENTRYPOINT ["./server"]` |
+| `EXPOSE` | 宣告容器監聽的 port（僅文件用途） | `EXPOSE 8080` |
+| `ENV` | 設定環境變數 | `ENV GIN_MODE=release` |
+| `USER` | 指定執行使用者 | `USER nonroot` |
+| `HEALTHCHECK` | 定義健康檢查 | `HEALTHCHECK CMD curl -f localhost/` |
+
+> AI 很會寫這種東西，對 SRE 而言這部分不是最重要的。
+
+---
+
+# Dockerfile 的價值
+
+- 把專案啟動流程寫成「規範化語言」
+- 啟動流程可以維持統一
+- 減少新進開發者的設定負擔
+
+完整循環：
+
+```
+Dockerfile → docker build → Image → docker run → Container
+```
+
+從寫程式到跑起來，都被一個檔案描述清楚。
+
+---
+layout: section
+---
+
+# 綜合練習
+
+---
+
+# 動手做
+
+完成以下練習：
+
+📄 `exercises/02-push-to-dockerhub.md`
+
+把 my-app 的 Image 推上 Docker Hub，讓別人也能跑你的服務。
+
+---
 layout: end
 ---
 
-# 第一章結束
+# Docker 篇結束
 
-下一章：**Docker Compose**
+下午：**CI/CD + Prometheus**
 
-`02-docker-compose.md`
+謝謝大家！
