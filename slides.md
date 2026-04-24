@@ -276,6 +276,20 @@ CONTAINER ID   IMAGE                STATUS           PORTS                  NAME
 
 ---
 
+# GUI 版：查看容器
+
+<div class="flex justify-center mt-2">
+  <img src="/orbstack-container-info.png" class="max-h-[24rem] rounded shadow" />
+</div>
+
+<div class="text-sm opacity-70 mt-4 text-center">
+
+OrbStack 的 Containers 頁，相當於 `docker ps` + `docker inspect`
+
+</div>
+
+---
+
 # 停止與清理
 
 ```bash {1-2|4-6|all}
@@ -382,6 +396,20 @@ docker image prune
 ```
 
 </v-click>
+
+---
+
+# GUI 版：Image 清單
+
+<div class="flex justify-center mt-2">
+  <img src="/orbstack-images.png" class="max-h-[24rem] rounded shadow" />
+</div>
+
+<div class="text-sm opacity-70 mt-4 text-center">
+
+OrbStack 的 Images 頁，相當於 `docker images` + `docker inspect`
+
+</div>
 
 ---
 
@@ -751,9 +779,23 @@ docker volume inspect pgdata
 # 刪除指定 Volume
 docker volume rm pgdata
 
-# 刪除所有未使用的 Volume（執行前請先問你家老大）
+# 刪除所有未使用的 Volume（不可逆，請先確認）
 docker volume prune
 ```
+
+---
+
+# GUI 版：Volume 清單
+
+<div class="flex justify-center mt-2">
+  <img src="/orbstack-volumes.png" class="max-h-[24rem] rounded shadow" />
+</div>
+
+<div class="text-sm opacity-70 mt-4 text-center">
+
+OrbStack 的 Volumes 頁，相當於 `docker volume ls` + `inspect`
+
+</div>
 
 ---
 layout: section
@@ -792,6 +834,20 @@ docker logs -f --tail 50 -t my-nginx
 
 ---
 
+# GUI 版：Logs
+
+<div class="flex justify-center mt-2">
+  <img src="/orbstack-container-logs.png" class="max-h-[24rem] rounded shadow" />
+</div>
+
+<div class="text-sm opacity-70 mt-4 text-center">
+
+OrbStack 的 Logs 頁，相當於 `docker logs -f`
+
+</div>
+
+---
+
 # 進入容器內部
 
 ```bash {1-2|4-5|7-8|all}
@@ -815,6 +871,34 @@ docker exec -it -u root my-nginx sh
 
 ---
 
+# GUI 版：Terminal
+
+<div class="flex justify-center mt-2">
+  <img src="/orbstack-container-terminal.png" class="max-h-[22rem] rounded shadow" />
+</div>
+
+<div class="text-sm opacity-70 mt-4 text-center">
+
+OrbStack 的 Terminal 頁，相當於 `docker exec -it <container> sh`
+
+</div>
+
+---
+
+# GUI 版：Files
+
+<div class="flex justify-center mt-2">
+  <img src="/orbstack-container-files.png" class="max-h-[22rem] rounded shadow" />
+</div>
+
+<div class="text-sm opacity-70 mt-4 text-center">
+
+OrbStack 的 Files 頁 — 不用進 exec 就能瀏覽容器內檔案系統
+
+</div>
+
+---
+
 # 查看資源使用狀況
 
 ```bash
@@ -833,6 +917,20 @@ a1b2c3d4e5f6   my-nginx   0.00%   3.441MiB / 7.667GiB   0.04%   1.45kB / 0B
 ```
 
 </v-click>
+
+---
+
+# GUI 版：Stats
+
+<div class="flex justify-center mt-2">
+  <img src="/orbstack-container-stats.png" class="max-h-[22rem] rounded shadow" />
+</div>
+
+<div class="text-sm opacity-70 mt-4 text-center">
+
+OrbStack 的 Stats 頁 — 相當於 `docker stats`，附 CPU / Memory / Network / Disk 即時圖表
+
+</div>
 
 ---
 layout: section
