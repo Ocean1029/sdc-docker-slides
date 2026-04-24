@@ -21,52 +21,6 @@ SDC SRE Workshop · Day 1
 </div>
 
 ---
-layout: intro
----
-
-# 登場人物
-
-<div class="grid grid-cols-3 gap-6 mt-12">
-
-<div>
-
-### Ocean
-
-SDC SRE Team 新進成員
-
-負責維護社團基礎設施與部署流程
-
-還在摸索中，常常搞出狀況
-
-</div>
-
-<div>
-
-### Andrew
-
-SDC 社長
-
-熟悉社團大小事
-
-整天在喝酒
-
-</div>
-
-<div>
-
-### Snow
-
-SDC 開發部長
-
-明明很聰明但常常把事情丟給 Ocean
-
-口頭禪是「歐不」
-
-</div>
-
-</div>
-
----
 layout: section
 ---
 
@@ -96,20 +50,19 @@ layout: section
 
 # 沒有容器化的情境
 
-Andrew 要請 Ocean 把 Go + PostgreSQL 的網頁應用部署上線
+不同開發者的環境可能長這樣：
 
 | 開發者 | 作業系統 | Go 版本 | PostgreSQL | 函式庫 |
 |--------|---------|---------|-----------|--------|
-| Andrew | macOS   | 1.21    | 15        | v2.3.1 |
-| Ocean  | Ubuntu  | 1.19    | 14        | v2.1.0 |
+| A | macOS   | 1.21    | 15        | v2.3.1 |
+| B | Ubuntu  | 1.19    | 14        | v2.1.0 |
 
 <v-clicks>
 
-- Andrew 的 macOS 程式在 Ocean 的 Ubuntu 上噴錯
-- README 空空如也，不知從何改起
-- Ocean 跟 Claude Code 奮戰兩小時，喝兩口 Whiskey 睡著了
-- Andrew 自己登入系辦機器部署 → 正式環境又不一樣 → 2000 行 errors
-- Andrew 一邊喝 Triple espresso with Vodka 一邊咒罵 SRE Team
+- 同一份程式碼在不同機器上行為不一致
+- README 難以窮盡所有環境細節，容易過時
+- 開發機 / 測試機 / 正式機是各自獨立的黑盒
+- 部署時噴錯，難以重現也難以排查
 
 </v-clicks>
 
@@ -172,22 +125,6 @@ layout: section
 ---
 
 # 1.2 容器 vs 虛擬機器
-
----
-
-# Ocean 的疑問
-
-<div class="mt-12 text-xl">
-
-Ocean：「這跟 VM 有什麼不一樣？不都是把東西在隔離的環境跑起來？」
-
-<div v-click class="mt-8">
-
-Snow：「他們在做類似的事情，但**要解決的問題不一樣**。」
-
-</div>
-
-</div>
 
 ---
 layout: two-cols
@@ -626,31 +563,28 @@ layout: section
 
 ---
 
-# Ocean 很帥氣地 demo
-
-Ocean 打了：
+# 沒有 `-p` 會怎樣？
 
 ```bash
 docker run nginx:1.27-alpine
 ```
 
-打開瀏覽器連到 `http://localhost:3000`
-
 <v-click>
 
-→ **This site can't be reached**
-
-Ocean 打 `docker ps`：容器跑得好好的。
+打開瀏覽器連 `http://localhost:80` → **連不上**
 
 </v-click>
 
 <v-click>
 
-Andrew：「你沒加 `-p`，port 根本沒開出來啊。」
+`docker ps` 卻顯示容器正常運行：
 
-Ocean：「port 是什麼？」
+```
+CONTAINER ID   IMAGE               STATUS          PORTS   NAMES
+7bbb864c2612   nginx:1.27-alpine   Up 30 seconds           naughty_brown
+```
 
-Snow：「**6**」
+`PORTS` 欄位是空的 — 容器內的服務沒有對外開放。
 
 </v-click>
 
@@ -720,29 +654,32 @@ layout: section
 
 ---
 
-# Ocean 又搞砸了
+# 容器砍掉 = 資料消失
 
-Ocean 把社團 Postgres 用 Docker 跑起來，花一個下午匯入資料。
+假設用 Docker 跑 Postgres 並匯入一份重要資料：
 
-隔天容器停了，他想說沒關係砍掉重跑：
+```bash
+docker run --name db postgres:17-alpine
+# 匯入資料...
+```
+
+<v-click>
+
+容器停掉後砍掉重跑：
 
 ```bash
 docker rm db && docker run --name db postgres:17-alpine
 ```
 
-<v-click>
-
-打開資料庫一看：裡面比新的還乾淨。
-
-**喔不對他就是新的。**
-
 </v-click>
 
 <v-click>
 
-Snow：「容器砍掉，裡面的可寫層就沒了啊。還記得 1.4 節講的嗎？」
+### 資料全部消失
 
-Snow：「噢不。」
+容器的可寫層（1.4 節）跟容器生命週期綁在一起，`docker rm` 的當下就歸零。
+
+需要一種機制把資料放在容器之外 → **Volume / Bind Mount**
 
 </v-click>
 
